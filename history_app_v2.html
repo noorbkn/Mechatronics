@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Air Quality History</title>
+  <style>
+    :root { color-scheme: dark; }
+    body{
+      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      margin:0; padding:1.25rem;
+      background:#0b1220; color:#e5e7eb;
+    }
+    h1{ margin:0 0 .25rem; font-size:1.35rem; }
+    .sub{ color:#94a3b8; font-size:.9rem; margin-bottom:1rem; }
+
+    .row{ display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; }
+    .card{
+      background:#0f172a; border:1px solid rgba(255,255,255,.06);
+      border-radius:14px; padding:1rem; box-shadow:0 10px 30px rgba(0,0,0,.25);
+      min-width:160px; flex:1;
+    }
+    .label{ color:#94a3b8; font-size:.75rem; letter-spacing:.08em; text-transform:uppercase; }
+    .value{ font-size:1.6rem; margin-top:.35rem; }
+    .unit{ font-size:.9rem; color:#94a3b8; margin-left:.25rem; }
+
+    .panel{
+      margin-top:1rem;
+      background:#0f172a; border:1px solid rgba(255,255,255,.06);
+      border-radius:14px; padding:1rem;
+    }
+
+    input, button{
+      background:#0b1220; color:#e5e7eb;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:10px; padding:.6rem .75rem;
+      font-size:.95rem;
+    }
+    button{ cursor:pointer; }
+    button:hover{ border-color:rgba(255,255,255,.25); }
+
+    table{
+      width:100%; border-collapse:collapse; margin-top:.75rem; overflow:hidden;
+      border-radius:12px;
+    }
+    th, td{
+      border-bottom:1px solid rgba(255,255,255,.07);
+      padding:.55rem .6rem; text-align:left;
+      font-size:.92rem;
+      white-space:nowrap;
+    }
+    th{ color:#94a3b8; font-weight:600; text-transform:uppercase; letter-spacing:.06em; font-size:.72rem; }
+    tr:hover td{ background: rgba(255,255,255,.03); }
+    .muted{ color:#94a3b8; }
+    .pill{ display:inline-block; padding:.15rem .5rem; border-radius:999px; font-size:.8rem; border:1px solid rgba(255,255,255,.12); }
+    .ok{ color:#22c55e; border-color:rgba(34,197,94,.35); }
+    .warn{ color:#f59e0b; border-color:rgba(245,158,11,.35); }
+    .bad{ color:#ef4444; border-color:rgba(239,68,68,.35); }
+
+    /* IMPORTANT: canvas is sized by CSS; JS will fit its internal resolution to this */
+    canvas{
+      width:100%;
+      height:260px;
+      background:#0b1220;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.06);
+      display:block;
+    }
+
+    .grid2{ display:grid; grid-template-columns:1fr; gap:1rem; }
+    @media (min-width: 900px){ .grid2{ grid-template-columns:1fr 1fr; } }
+
+    .footer{ margin-top:.8rem; color:#94a3b8; font-size:.85rem; }
+    code{ background:rgba(255,255,255,.06); padding:.15rem .35rem; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h1>Air Quality History</h1>
+  <div class="sub">Load a CSV/TSV file and view trends + latest status.</div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="file" type="file" accept=".csv,.tsv,.txt" />
+      <button id="loadDemo">Load demo data</button>
+      <span class="muted" id="status">No file loaded.</span>
+    </div>
+
+    <div class="row" style="margin-top:.75rem">
+      <label class="muted">From <input id="from" type="datetime-local"></label>
+      <label class="muted">To <input id="to" type="datetime-local"></label>
+      <button id="applyFilter">Apply filter</button>
+      <button id="clearFilter">Clear</button>
+    </div>
+
+    <div class="footer">
+      Tip (iPhone): open via a tiny server:
+      <code>python3 -m http.server 8000</code> then visit
+      <code>http://&lt;your-ip&gt;:8000/history_app.html</code>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:1rem" id="kpis">
+    <div class="card"><div class="label">Latest Temperature</div><div class="value"><span id="kTemp">—</span><span class="unit">°C</span></div></div>
+    <div class="card"><div class="label">Latest Humidity</div><div class="value"><span id="kHum">—</span><span class="unit">%</span></div></div>
+    <div class="card"><div class="label">Latest CO₂</div><div class="value"><span id="kCO2">—</span><span class="unit">ppm</span></div></div>
+    <div class="card"><div class="label">Latest AQI</div><div class="value"><span id="kAQI">—</span></div><div class="muted" id="kAQIText"></div></div>
+    <div class="card"><div class="label">Latest TVOC</div><div class="value"><span id="kTVOC">—</span><span class="unit">ppb</span></div></div>
+    <div class="card"><div class="label">Fan</div><div class="value"><span id="kFan">—</span></div></div>
+  </div>
+
+  <div class="grid2" style="margin-top:1rem">
+    <div class="panel">
+      <div class="label">Temperature history (°C)</div>
+      <canvas id="chartTemp"></canvas>
+    </div>
+    <div class="panel">
+      <div class="label">CO₂ history (ppm)</div>
+      <canvas id="chartCO2"></canvas>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:1rem">
+    <div class="panel">
+      <div class="label">Humidity history (%)</div>
+      <canvas id="chartHum"></canvas>
+    </div>
+    <div class="panel">
+      <div class="label">TVOC history (ppb)</div>
+      <canvas id="chartTVOC"></canvas>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:1rem">
+    <div class="label">Air quality (AQI) history</div>
+    <canvas id="chartAQI"></canvas>
+  </div>
+
+  <div class="panel" style="margin-top:1rem">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="label">Data table</div>
+        <div class="muted" id="count">—</div>
+      </div>
+      <button id="downloadFiltered">Download filtered CSV</button>
+    </div>
+    <div style="overflow:auto">
+      <table id="table">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+  // ---------------- Normal ranges (thresholds) ----------------
+  const RANGES = {
+    temp: { min: 20,  max: 25,  label: "Normal: 20–25 °C" },
+    hum:  { min: 40,  max: 60,  label: "Normal: 40–60 %" },
+    co2:  { min: 400, max: 600, label: "Normal: 400–600 ppm" },
+    aqi:  { min: 4,   max: 6,   label: "Normal: 4–6" },
+    tvoc: { min: 30,  max: 35,  label: "Normal: 30–35 ppb" },
+  };
+
+  function inRange(key, v){
+    const r = RANGES[key];
+    if (!r || v == null) return null;
+    return v >= r.min && v <= r.max;
+  }
+
+  // ---------------- Demo data (TAB-delimited) ----------------
+  const DEMO = `Timestamp\tTemperature (C)\tHumidity (%)\tCO2 (ppm)\tAir Quality\tTVOC\tFan ON/OFF
+2025-12-04T14:00:00\t24.3\t34.8\t443\t1\t32\tOFF
+2025-12-04T14:10:00\t24.1\t35.2\t445\t1\t30\tOFF
+2025-12-04T14:20:00\t24.4\t36.0\t447\t1\t31\tOFF
+2025-12-04T14:30:00\t24.8\t36.5\t450\t1\t34\tOFF
+2025-12-04T14:40:00\t25.2\t35.9\t455\t1\t36\tOFF
+2025-12-04T14:50:00\t26.0\t35.0\t460\t1\t38\tOFF
+2025-12-04T15:00:00\t27.4\t34.5\t473\t1\t58\tOFF
+2025-12-04T15:10:00\t28.6\t33.9\t480\t1\t60\tOFF
+2025-12-04T15:20:00\t30.1\t33.5\t510\t2\t65\tON
+2025-12-04T15:30:00\t31.8\t34.0\t560\t3\t75\tON
+2025-12-04T15:40:00\t32.6\t34.2\t620\t3\t82\tON
+2025-12-04T15:50:00\t33.7\t34.1\t467\t1\t48\tOFF`;
+
+  // ---------------- State ----------------
+  let allRows = [];
+  let viewRows = [];
+
+  const hoverData = {
+    chartTemp: null,
+    chartCO2: null,
+    chartHum: null,
+    chartTVOC: null,
+    chartAQI: null,
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------------- Fix stretching: fit canvas to its CSS size (+ retina) ----------------
+  function fitCanvasToCSS(canvas){
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width * dpr));
+    const h = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    const ctx = canvas.getContext("2d");
+    // Draw using CSS pixel coordinates
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+  }
+
+  // ---------------- Robust CSV/TSV parser ----------------
+  function splitRow(line, delim) {
+    const out = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (!inQ && ch === delim) {
+        out.push(cur.trim());
+        cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  function parseDelimited(text) {
+    text = text.replace(/^\uFEFF/, "");
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+    if (lines.length < 2) return [];
+
+    const headerLine = lines[0];
+    const candidates = ["\t", ";", ","];
+    let delim = ",";
+    let best = -1;
+    for (const d of candidates) {
+      const count = splitRow(headerLine, d).length;
+      if (count > best) { best = count; delim = d; }
+    }
+
+    const headers = splitRow(headerLine, delim).map(h => h.replace(/^\uFEFF/, "").trim());
+
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = splitRow(lines[i], delim);
+      if (cols.length < Math.max(2, Math.floor(headers.length * 0.6))) continue;
+      const obj = {};
+      headers.forEach((h, idx) => obj[h] = (cols[idx] ?? "").trim());
+      rows.push(obj);
+    }
+    return rows;
+  }
+
+  // ---------------- Key mapping / parsing ----------------
+  function findKey(obj, options) {
+    const keys = Object.keys(obj);
+    const lower = keys.map(k => k.toLowerCase());
+    for (const opt of options) {
+      const idx = lower.indexOf(opt.toLowerCase());
+      if (idx >= 0) return keys[idx];
+    }
+    for (const opt of options) {
+      const idx = lower.findIndex(k => k.includes(opt.toLowerCase()));
+      if (idx >= 0) return keys[idx];
+    }
+    return null;
+  }
+
+  function parseTimestamp(s) {
+    if (!s) return null;
+    s = String(s).trim().replace(/^\uFEFF/, "");
+    let d = new Date(s); // ISO: 2025-12-04T14:00:00
+    if (!Number.isNaN(d.getTime())) return d;
+    if (/^\d{4}-\d{2}-\d{2}\s+\d/.test(s)) {
+      d = new Date(s.replace(" ", "T"));
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    return null;
+  }
+
+  function toNum(x){
+    if (x === undefined || x === null) return null;
+    const s = String(x).replace(/[^\d.\-]/g,"");
+    if (s === "") return null;
+    const v = Number(s);
+    return Number.isFinite(v) ? v : null;
+  }
+  function toInt(x){
+    const v = toNum(x);
+    return v === null ? null : Math.round(v);
+  }
+
+  function normalizeRows(rows) {
+    return rows.map(r => {
+      const tsKey   = findKey(r, ["Timestamp"]);
+      const tempKey = findKey(r, ["Temperature (C)", "Temperature"]);
+      const humKey  = findKey(r, ["Humidity (%)", "Humidity"]);
+      const co2Key  = findKey(r, ["CO2 (ppm)", "CO2"]);
+      const aqiKey  = findKey(r, ["Air Quality", "AQI"]);
+      const tvocKey = findKey(r, ["TVOC"]);
+      const fanKey  = findKey(r, ["Fan ON/OFF", "Fan"]);
+
+      const tsRaw = tsKey ? r[tsKey] : "";
+      const ts = parseTimestamp(tsRaw);
+
+      return {
+        tsRaw, ts,
+        temp: toNum(tempKey ? r[tempKey] : null),
+        hum:  toNum(humKey ? r[humKey] : null),
+        co2:  toNum(co2Key ? r[co2Key] : null),
+        aqi:  toInt(aqiKey ? r[aqiKey] : null),
+        tvoc: toNum(tvocKey ? r[tvocKey] : null),
+        fan:  (fanKey ? r[fanKey] : "").toString().trim().toUpperCase()
+      };
+    }).filter(r => r.ts && !Number.isNaN(r.ts.getTime()));
+  }
+
+  function aqiText(aqi){
+    if (aqi == null) return "—";
+    if (aqi <= 0) return "No AQI data";
+    if (aqi <= 2) return "Good air quality";
+    if (aqi === 3) return "Moderate air quality";
+    return "Poor / unhealthy air";
+  }
+
+  function setStatus(msg){ $("status").textContent = msg; }
+
+  function setKPIs(rows){
+    if (!rows.length){
+      $("kTemp").textContent = "—";
+      $("kHum").textContent = "—";
+      $("kCO2").textContent = "—";
+      $("kAQI").textContent = "—";
+      $("kTVOC").textContent = "—";
+      $("kFan").textContent = "—";
+      $("kAQIText").textContent = "";
+      return;
+    }
+    const last = rows[rows.length - 1];
+    $("kTemp").textContent = last.temp != null ? last.temp.toFixed(1) : "—";
+    $("kHum").textContent  = last.hum  != null ? last.hum.toFixed(1)  : "—";
+    $("kCO2").textContent  = last.co2  != null ? String(Math.round(last.co2)) : "—";
+    $("kAQI").textContent  = last.aqi  != null ? String(last.aqi) : "—";
+    $("kTVOC").textContent = last.tvoc != null ? String(Math.round(last.tvoc)) : "—";
+    $("kFan").textContent  = last.fan || "—";
+    $("kAQIText").textContent = aqiText(last.aqi);
+  }
+
+  function buildTable(rows){
+    const thead = $("table").querySelector("thead");
+    const tbody = $("table").querySelector("tbody");
+    thead.innerHTML = "";
+    tbody.innerHTML = "";
+
+    const headers = ["Timestamp","Temperature (C)","Humidity (%)","CO2 (ppm)","Air Quality","TVOC","Fan ON/OFF"];
+    const trh = document.createElement("tr");
+    headers.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      const aqi = r.aqi;
+      const aqiClass = (aqi == null || aqi <= 0) ? "" : (aqi <= 2 ? "ok" : (aqi === 3 ? "warn" : "bad"));
+      const fanPill = r.fan === "ON" ? "ok" : "muted";
+
+      tr.innerHTML = `
+        <td>${r.tsRaw}</td>
+        <td>${r.temp != null ? r.temp.toFixed(1) : ""}</td>
+        <td>${r.hum != null ? r.hum.toFixed(1) : ""}</td>
+        <td>${r.co2 != null ? Math.round(r.co2) : ""}</td>
+        <td><span class="pill ${aqiClass}">${aqi != null ? aqi : ""}</span></td>
+        <td>${r.tvoc != null ? Math.round(r.tvoc) : ""}</td>
+        <td><span class="pill ${fanPill}">${r.fan || ""}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    $("count").textContent = `${rows.length} rows`;
+  }
+
+  // ---------------- Threshold shading ----------------
+  function shadeThresholdBand(ctx, pad, W, H, yMap, key){
+    const r = RANGES[key];
+    if (!r) return;
+
+    const left = pad, right = W - pad, top = pad, bottom = H - pad;
+    const plotW = right - left;
+    const plotH = bottom - top;
+
+    // red outside band (whole plot)
+    ctx.fillStyle = "rgba(239,68,68,0.08)";
+    ctx.fillRect(left, top, plotW, plotH);
+
+    // green band (normal)
+    let yTop = yMap(r.max);
+    let yBot = yMap(r.min);
+    if (yTop > yBot) { const t = yTop; yTop = yBot; yBot = t; }
+
+    ctx.fillStyle = "rgba(34,197,94,0.12)";
+    ctx.fillRect(left, yTop, plotW, (yBot - yTop));
+
+    // dashed threshold lines
+    ctx.save();
+    ctx.setLineDash([6,6]);
+    ctx.strokeStyle = "rgba(34,197,94,0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(left, yMap(r.min)); ctx.lineTo(right, yMap(r.min)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(left, yMap(r.max)); ctx.lineTo(right, yMap(r.max)); ctx.stroke();
+    ctx.restore();
+
+    // label
+    ctx.fillStyle = "rgba(148,163,184,.9)";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "right";
+    ctx.fillText(r.label, right, top + 14);
+  }
+
+  // ---------------- Charts (now drawn in CSS pixels => no stretching) ----------------
+  function drawLineChart(canvasId, rows, key, yLabel, hoverIndex = null){
+    const c = $(canvasId);
+    const ctx = fitCanvasToCSS(c);
+    const rect = c.getBoundingClientRect();
+    const W = rect.width;
+    const H = rect.height;
+
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = "rgba(148,163,184,.9)";
+    ctx.font = "12px system-ui";
+
+    if (!rows.length){
+      ctx.fillText("No data", 20, 30);
+      return;
+    }
+
+    const dataPoints = rows.filter(r => r[key] != null);
+    if (!dataPoints.length){
+      ctx.fillText("No numeric data", 20, 30);
+      return;
+    }
+
+    const xsAll = rows.map(r => r.ts.getTime());
+    const ys = dataPoints.map(r => r[key]);
+
+    const xmin = Math.min(...xsAll), xmax = Math.max(...xsAll);
+    let ymin = Math.min(...ys), ymax = Math.max(...ys);
+
+    const pad = 50;
+    const plotW = W - 2*pad, plotH = H - 2*pad;
+
+    const yr = ymax - ymin;
+    if (yr === 0){ ymin -= 1; ymax += 1; }
+    else { ymin -= 0.1*yr; ymax += 0.1*yr; }
+
+    const precision = (yr < 10 && yr > 0) ? 1 : 0;
+
+    const xMap = (t) => pad + (xmax===xmin ? plotW/2 : (t-xmin)/(xmax-xmin)*plotW);
+    const yMap = (v) => (H - pad) - (ymax===ymin ? plotH/2 : (v-ymin)/(ymax-ymin)*plotH);
+
+    // threshold background
+    shadeThresholdBand(ctx, pad, W, H, yMap, key);
+
+    // grid + y labels
+    ctx.strokeStyle = "rgba(255,255,255,.08)";
+    ctx.lineWidth = 1;
+    const nY = 5;
+    for (let i=0;i<nY;i++){
+      const v = ymin + (ymax-ymin)*(i/(nY-1));
+      const y = yMap(v);
+      ctx.beginPath();
+      ctx.moveTo(pad, y);
+      ctx.lineTo(W-pad, y);
+      ctx.stroke();
+      ctx.textAlign = "right";
+      ctx.fillStyle = "rgba(148,163,184,.9)";
+      ctx.fillText(v.toFixed(precision), pad-8, y+4);
+    }
+
+    // x ticks (24h format)
+    ctx.textAlign = "center";
+    const nX = Math.min(6, dataPoints.length);
+    for (let i=0;i<nX;i++){
+      const idx = Math.floor((dataPoints.length-1)*i/(nX-1 || 1));
+      const r = dataPoints[idx];
+      const x = xMap(r.ts.getTime());
+      ctx.beginPath();
+      ctx.moveTo(x, H-pad);
+      ctx.lineTo(x, H-pad+5);
+      ctx.stroke();
+      const tStr = r.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      ctx.fillText(tStr, x, H-pad+20);
+    }
+
+    // title
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(148,163,184,.9)";
+    ctx.fillText(yLabel, pad, pad-16);
+
+    // line
+    ctx.strokeStyle = "rgba(229,231,235,.85)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false;
+    for (const r of rows){
+      const yv = r[key];
+      if (yv == null || r.ts == null) { started = false; continue; }
+      const x = xMap(r.ts.getTime());
+      const y = yMap(yv);
+      if (!started){ ctx.moveTo(x,y); started=true; }
+      else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    // points (green in range, red out)
+    dataPoints.forEach(r => {
+      const ok = inRange(key, r[key]);
+      const x = xMap(r.ts.getTime());
+      const y = yMap(r[key]);
+      ctx.fillStyle = ok === true ? "rgba(34,197,94,0.95)" : "rgba(239,68,68,0.95)";
+      ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+    });
+
+    // hover
+    if (hoverIndex !== null && dataPoints[hoverIndex]) {
+      const hoverRow = dataPoints[hoverIndex];
+      const x = xMap(hoverRow.ts.getTime());
+      const y = yMap(hoverRow[key]);
+
+      ctx.strokeStyle = "rgba(255,255,255, 0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, pad);
+      ctx.lineTo(x, H - pad);
+      ctx.stroke();
+
+      const ok = inRange(key, hoverRow[key]);
+      ctx.fillStyle = ok === true ? "rgba(34,197,94,1)" : "rgba(239,68,68,1)";
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      const unit = yLabel.split('(')[1]?.replace(')','') || '';
+      const tooltipText = `${hoverRow[key].toFixed(precision)} ${unit}  •  ${ok ? "OK" : "OUT"}`;
+      const tooltipTime = hoverRow.ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+      const textWidth = ctx.measureText(tooltipText).width;
+      const boxWidth = Math.max(textWidth + 20, 180);
+      const boxHeight = 44;
+      let boxX = x + 10;
+      let boxY = y - boxHeight / 2;
+
+      if (boxX + boxWidth > W) boxX = x - 10 - boxWidth;
+      if (boxY < pad) boxY = pad;
+      if (boxY + boxHeight > H - pad) boxY = H - pad - boxHeight;
+
+      ctx.fillStyle = "#1e293b";
+      ctx.strokeStyle = "#475569";
+      ctx.lineWidth = 1;
+      ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+      ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+      ctx.fillStyle = "#e5e7eb";
+      ctx.textAlign = "center";
+      ctx.fillText(tooltipText, boxX + boxWidth / 2, boxY + 18);
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillText(tooltipTime, boxX + boxWidth / 2, boxY + 35);
+    }
+
+    // last marker (keep green dot)
+    const last = dataPoints[dataPoints.length-1];
+    if (last){
+      const x = xMap(last.ts.getTime());
+      const y = yMap(last[key]);
+      ctx.fillStyle = "rgba(34,197,94,.9)";
+      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  function renderAll(){
+    viewRows = viewRows.filter(r => r && r.ts && !Number.isNaN(r.ts.getTime()));
+    viewRows.sort((a,b)=>a.ts-b.ts);
+
+    setKPIs(viewRows);
+    buildTable(viewRows);
+
+    drawLineChart("chartTemp", viewRows, "temp", "Temperature (°C)", hoverData.chartTemp);
+    drawLineChart("chartCO2",  viewRows, "co2",  "CO₂ (ppm)",       hoverData.chartCO2);
+    drawLineChart("chartHum",  viewRows, "hum",  "Humidity (%)",    hoverData.chartHum);
+    drawLineChart("chartTVOC", viewRows, "tvoc", "TVOC (ppb)",      hoverData.chartTVOC);
+    drawLineChart("chartAQI",  viewRows, "aqi",  "Air Quality (AQI)", hoverData.chartAQI);
+  }
+
+  // ---------------- Hover interactivity (now in CSS pixels => no scaleFactor) ----------------
+  function addChartInteractivity(canvasId, key) {
+    const c = $(canvasId);
+    const getRelevantDataPoints = () => viewRows.filter(r => r[key] != null);
+
+    c.addEventListener('mousemove', (e) => {
+      const dataPoints = getRelevantDataPoints();
+      if (!dataPoints.length) return;
+
+      const rect = c.getBoundingClientRect();
+      const W = rect.width;
+      const mouseX = e.clientX - rect.left;
+
+      const xsAll = viewRows.map(r => r.ts.getTime());
+      const xmin = Math.min(...xsAll), xmax = Math.max(...xsAll);
+
+      const pad = 50;
+      const plotW = W - 2*pad;
+
+      function xMap(t){
+        if (xmax === xmin) return pad + plotW / 2;
+        return pad + (t - xmin) / (xmax - xmin) * plotW;
+      }
+
+      let closestIndex = null;
+      let bestDx = Infinity;
+
+      dataPoints.forEach((r, index) => {
+        const x = xMap(r.ts.getTime());
+        const dx = Math.abs(mouseX - x);
+        if (dx < bestDx) { bestDx = dx; closestIndex = index; }
+      });
+
+      if (bestDx > 60) closestIndex = null;
+
+      if (hoverData[canvasId] !== closestIndex) {
+        hoverData[canvasId] = closestIndex;
+        const labelText = c.parentNode.querySelector('.label')?.textContent || "";
+        const yLabelText = labelText.replace(" history", "");
+        drawLineChart(canvasId, viewRows, key, yLabelText || yLabelText, closestIndex);
+      }
+    });
+
+    c.addEventListener('mouseleave', () => {
+      if (hoverData[canvasId] !== null) {
+        hoverData[canvasId] = null;
+        const labelText = c.parentNode.querySelector('.label')?.textContent || "";
+        const yLabelText = labelText.replace(" history", "");
+        drawLineChart(canvasId, viewRows, key, yLabelText || yLabelText, null);
+      }
+    });
+  }
+
+  function applyFilter(){
+    const fromVal = $("from").value ? new Date($("from").value) : null;
+    const toVal   = $("to").value ? new Date($("to").value) : null;
+
+    viewRows = allRows.filter(r => {
+      if (!r.ts) return false;
+      if (fromVal && r.ts < fromVal) return false;
+      if (toVal && r.ts > toVal) return false;
+      return true;
+    });
+
+    setStatus(`Loaded ${viewRows.length} filtered rows.`);
+    renderAll();
+  }
+
+  function clearFilter(){
+    $("from").value = "";
+    $("to").value = "";
+    viewRows = [...allRows];
+    setStatus(`Loaded ${viewRows.length} rows.`);
+    renderAll();
+  }
+
+  function downloadFiltered(){
+    if (!viewRows.length) return;
+    const header = ["Timestamp","Temperature (C)","Humidity (%)","CO2 (ppm)","Air Quality","TVOC","Fan ON/OFF"];
+    const lines = [header.join(",")];
+    for (const r of viewRows){
+      lines.push([r.tsRaw, r.temp ?? "", r.hum ?? "", r.co2 ?? "", r.aqi ?? "", r.tvoc ?? "", r.fan ?? ""].join(","));
+    }
+    const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "filtered_datalog.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------------- UI wiring ----------------
+  $("file").addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    Object.keys(hoverData).forEach(k => hoverData[k] = null);
+
+    const text = await file.text();
+    const rawRows = parseDelimited(text);
+    allRows = normalizeRows(rawRows);
+
+    if (!allRows.length){
+      viewRows = [];
+      renderAll();
+      setStatus("Could not parse file (0 valid timestamps). Check Timestamp format + delimiter.");
+      return;
+    }
+
+    allRows.sort((a,b)=>a.ts-b.ts);
+    const min = allRows[0].ts;
+    const max = allRows[allRows.length-1].ts;
+
+    $("from").value = min.toISOString().slice(0,16);
+    $("to").value   = max.toISOString().slice(0,16);
+
+    viewRows = [...allRows];
+    setStatus(`Loaded ${allRows.length} rows from ${file.name}.`);
+    renderAll();
+  });
+
+  $("loadDemo").addEventListener("click", () => {
+    Object.keys(hoverData).forEach(k => hoverData[k] = null);
+
+    const rawRows = parseDelimited(DEMO);
+    allRows = normalizeRows(rawRows);
+
+    allRows.sort((a,b)=>a.ts-b.ts);
+    const min = allRows[0].ts;
+    const max = allRows[allRows.length-1].ts;
+
+    $("from").value = min.toISOString().slice(0,16);
+    $("to").value   = max.toISOString().slice(0,16);
+
+    viewRows = [...allRows];
+    setStatus(`Loaded demo data (${allRows.length} rows).`);
+    renderAll();
+  });
+
+  $("applyFilter").addEventListener("click", applyFilter);
+  $("clearFilter").addEventListener("click", clearFilter);
+  $("downloadFiltered").addEventListener("click", downloadFiltered);
+
+  addChartInteractivity("chartTemp", "temp");
+  addChartInteractivity("chartCO2", "co2");
+  addChartInteractivity("chartHum", "hum");
+  addChartInteractivity("chartTVOC", "tvoc");
+  addChartInteractivity("chartAQI", "aqi");
+
+  // If the window resizes, re-render so canvases refit (prevents stretching after resize)
+  window.addEventListener("resize", () => renderAll());
+
+  $("loadDemo").click();
+</script>
+</body>
+</html>
