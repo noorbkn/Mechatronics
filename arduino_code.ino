@@ -13,7 +13,7 @@
 //   VCC  -> 5V
 //   GND  -> GND
 //
-// Logs CSV every 30 mins for 24h (48 rows) to GH24H.csv
+// Logs CSV every 10 mins for 24h (144 rows) to GH24H.csv
 
 #include <Wire.h>
 #include <Adafruit_AHTX0.h>
@@ -60,11 +60,14 @@ const int BLUE_LED_PIN  = 37;   // Blue: temp OK
 const int GREEN_LED_PIN = 39;   // Green: CO2 OK
 const int BUZZER_PIN    = 22;   // Active buzzer
 
-// -------- Buttons --------
-const int BUTTON_MUTE = 24;   // mute alarm buzzer
-const int BUTTON_MODE = 8;    // cycle UI mode
-const int BUTTON_UP   = 9;    // increase value
-const int BUTTON_DOWN = 10;   // decrease value
+// -------- Buttons (UPDATED PINS) --------
+// Previously: MODE=8, UP=9, DOWN=10, MUTE=24
+// Now connected to: 24, 23, 25, 27
+// Assumed mapping in same order: MODE=24, UP=23, DOWN=25, MUTE=27
+const int BUTTON_MODE = 25;   // cycle UI mode
+const int BUTTON_UP   = 24;   // increase value
+const int BUTTON_DOWN = 23;   // decrease value
+const int BUTTON_MUTE = 27;   // mute alarm buzzer
 
 // -------- Setpoints (editable via UI) --------
 float TEMP_ON   = 30.0;   // temp above this = out of range (alarm)
@@ -112,8 +115,8 @@ bool lastMuteState  = HIGH;
 const int SD_CS_PIN = 53;
 const char* LOG_NAME = "GH24H.csv";
 
-// 30 min logging to match mock CSV: 48 rows / 24h
-const unsigned long LOG_INTERVAL_MS = 30UL * 60UL * 1000UL;
+// ✅ UPDATED: log every 10 minutes (instead of 30)
+const unsigned long LOG_INTERVAL_MS = 10UL * 60UL * 1000UL;
 
 // For quick testing you can temporarily use:
 // const unsigned long LOG_INTERVAL_MS = 5000UL;
@@ -555,4 +558,3 @@ void loop() {
     digitalWrite(BUZZER_PIN, LOW);
   }
 }
-
