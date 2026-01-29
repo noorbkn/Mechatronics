@@ -116,7 +116,7 @@ const int SD_CS_PIN = 53;
 const char* LOG_NAME = "GH24H.csv";
 
 // ✅ UPDATED: log every 10 minutes (instead of 30)
-const unsigned long LOG_INTERVAL_MS = 10UL * 60UL * 1000UL;
+const unsigned long LOG_INTERVAL_MS = 30UL * 60UL * 1000UL;  // 30 minutes
 
 // For quick testing you can temporarily use:
 // const unsigned long LOG_INTERVAL_MS = 5000UL;
